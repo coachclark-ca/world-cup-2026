@@ -233,58 +233,53 @@ const ESPN_MAP={
 // ESPN fetch updates live/in-progress scores and populates R16+ as they happen.
 let R16=[],QF=[],SF=[],FIN=[];
 
-// All 16 R32 matches in correct official FIFA bracket order.
-// Pairs feed R16 slots: (0,1)->R16[0], (2,3)->R16[1], (4,5)->R16[2], (6,7)->R16[3]
-//                       (8,9)->R16[4], (10,11)->R16[5], (12,13)->R16[6], (14,15)->R16[7]
-// Official R16 pairings confirmed from FIFA/CBS bracket:
-//   R16[0]: CAN vs MAR  (RSA/CAN winner + NED/MAR winner)
-//   R16[1]: PAR vs FRA  (GER/PAR winner + FRA/SWE winner)
-//   R16[2]: BRA vs NOR  (BRA/JPN winner + CIV/NOR winner)
-//   R16[3]: MEX vs ENG  (MEX/ECU winner + ENG/COD winner)
-//   R16[4]: POR vs ESP  (POR/CRO winner + ESP/AUT winner)
-//   R16[5]: USA vs BEL  (USA/BIH winner + BEL/SEN winner)
-//   R16[6]: ARG vs EGY  (ARG/CPV winner + AUS/EGY winner)
-//   R16[7]: SUI vs COL  (SUI/DZA winner + COL/GHA winner)
+// ── COMPLETE OFFICIAL FIFA 2026 BRACKET ─────────────────────────────────────
+// Bracket slot pairs → R16 slots (matching Google/FIFA bracket exactly):
+// (0,1)→R16[0]  (2,3)→R16[1]  (4,5)→R16[2]  (6,7)→R16[3]  ← LEFT HALF
+// (8,9)→R16[4]  (10,11)→R16[5] (12,13)→R16[6] (14,15)→R16[7] ← RIGHT HALF
+// All kickoff times shown in PDT (Pacific Daylight Time, UTC-7)
 let MATCHES = [
-  // ── LEFT HALF (bracket slots 0-7) ──
-  // → R16[0]: CAN vs MAR
-  {id:0,  h:'RSA',a:'CAN', sH:0,sA:1, status:'final', date:'Jun 28'},
-  {id:1,  h:'NED',a:'MAR', sH:1,sA:1, status:'final', date:'Jun 29', penWin:'MAR'},
-  // → R16[1]: PAR vs FRA
-  {id:2,  h:'GER',a:'PAR', sH:1,sA:1, status:'final', date:'Jun 29', penWin:'PAR'},
-  {id:3,  h:'FRA',a:'SWE', sH:3,sA:0, status:'final', date:'Jun 30'},
-  // → R16[2]: BRA vs NOR
-  {id:4,  h:'BRA',a:'JPN', sH:2,sA:1, status:'final', date:'Jun 29'},
-  {id:5,  h:'CIV',a:'NOR', sH:1,sA:2, status:'final', date:'Jun 30'},
-  // → R16[3]: MEX vs ENG
-  {id:6,  h:'MEX',a:'ECU', sH:2,sA:0, status:'final', date:'Jun 30'},
-  {id:7,  h:'ENG',a:'COD', sH:2,sA:1, status:'final', date:'Jul 1'},
-  // ── RIGHT HALF (bracket slots 8-15) ──
-  // → R16[4]: POR vs ESP
-  {id:8,  h:'POR',a:'CRO', sH:2,sA:1, status:'final', date:'Jul 2'},
-  {id:9,  h:'ESP',a:'AUT', sH:3,sA:0, status:'final', date:'Jul 2'},
-  // → R16[5]: USA vs BEL
-  {id:10, h:'USA',a:'BIH', sH:2,sA:0, status:'final', date:'Jul 1'},
-  {id:11, h:'BEL',a:'SEN', sH:3,sA:2, status:'final', date:'Jul 1'},
-  // → R16[6]: ARG vs EGY
-  {id:12, h:'ARG',a:'CPV', sH:3,sA:2, status:'final', date:'Jul 3'},
-  {id:13, h:'AUS',a:'EGY', sH:1,sA:1, status:'final', date:'Jul 3', penWin:'EGY'},
-  // → R16[7]: SUI vs COL
-  {id:14, h:'SUI',a:'DZA', sH:2,sA:0, status:'final', date:'Jul 2'},
-  {id:15, h:'COL',a:'GHA', sH:1,sA:0, status:'final', date:'Jul 3'},
+  // ── LEFT HALF ──────────────────────────────────────────────────────────────
+  // → R16[0]: CAN vs MAR (Jul 4, 10:00 AM PDT) — FINAL: MAR 3-0
+  {id:0,  h:'RSA',a:'CAN', sH:0,sA:1, status:'final',     date:'Jun 28', time:'12:00 PM PDT'},
+  {id:1,  h:'NED',a:'MAR', sH:1,sA:1, status:'final',     date:'Jun 29', time:'10:00 AM PDT', penWin:'MAR'},
+  // → R16[1]: PAR vs FRA (Jul 4, 2:00 PM PDT)
+  {id:2,  h:'GER',a:'PAR', sH:1,sA:1, status:'final',     date:'Jun 29', time:'1:00 PM PDT',  penWin:'PAR'},
+  {id:3,  h:'FRA',a:'SWE', sH:3,sA:0, status:'final',     date:'Jun 30', time:'10:00 AM PDT'},
+  // → R16[2]: BRA vs NOR (Jul 5, 1:00 PM PDT)
+  {id:4,  h:'BRA',a:'JPN', sH:2,sA:1, status:'final',     date:'Jun 29', time:'4:00 PM PDT'},
+  {id:5,  h:'CIV',a:'NOR', sH:1,sA:2, status:'final',     date:'Jun 30', time:'1:00 PM PDT'},
+  // → R16[3]: MEX vs ENG (Jul 5, 5:00 PM PDT)
+  {id:6,  h:'MEX',a:'ECU', sH:2,sA:0, status:'final',     date:'Jun 30', time:'4:00 PM PDT'},
+  {id:7,  h:'ENG',a:'COD', sH:2,sA:1, status:'final',     date:'Jul 1',  time:'9:00 AM PDT'},
+  // ── RIGHT HALF ─────────────────────────────────────────────────────────────
+  // → R16[4]: POR vs ESP (Jul 6, 12:00 PM PDT)
+  {id:8,  h:'POR',a:'CRO', sH:2,sA:1, status:'final',     date:'Jul 2',  time:'4:00 PM PDT'},
+  {id:9,  h:'ESP',a:'AUT', sH:3,sA:0, status:'final',     date:'Jul 2',  time:'12:00 PM PDT'},
+  // → R16[5]: USA vs BEL (Jul 6, 5:00 PM PDT)
+  {id:10, h:'USA',a:'BIH', sH:2,sA:0, status:'final',     date:'Jul 1',  time:'5:00 PM PDT'},
+  {id:11, h:'BEL',a:'SEN', sH:3,sA:2, status:'final',     date:'Jul 1',  time:'1:00 PM PDT'},
+  // → R16[6]: ARG vs EGY (Jul 7, 9:00 AM PDT)
+  {id:12, h:'ARG',a:'CPV', sH:3,sA:2, status:'final',     date:'Jul 3',  time:'3:00 PM PDT'},
+  {id:13, h:'AUS',a:'EGY', sH:1,sA:1, status:'final',     date:'Jul 3',  time:'11:00 AM PDT', penWin:'EGY'},
+  // → R16[7]: SUI vs COL (Jul 7, 1:00 PM PDT)
+  {id:14, h:'SUI',a:'DZA', sH:2,sA:0, status:'final',     date:'Jul 2',  time:'8:00 PM PDT'},
+  {id:15, h:'COL',a:'GHA', sH:1,sA:0, status:'final',     date:'Jul 3',  time:'6:30 PM PDT'},
 ];
 
-// Confirmed R16 fixtures with scores and probabilities
+// ── R16 FIXTURES — confirmed matchups with PST times ─────────────────────────
+// Ordered to match bracket: [0]=top-left pair, [7]=bottom-right pair
 const R16_FIXTURES = [
-  {h:'CAN', a:'MAR', sH:0,sA:3, status:'final',     date:'Jul 4',  prob:null},
-  {h:'PAR', a:'FRA', sH:0,sA:0, status:'scheduled', date:'Jul 4',  prob:{h:5.9,d:13.3,a:80.8}},
-  {h:'BRA', a:'NOR', sH:0,sA:0, status:'scheduled', date:'Jul 5',  prob:{h:52.6,d:25.3,a:22.1}},
-  {h:'MEX', a:'ENG', sH:0,sA:0, status:'scheduled', date:'Jul 5',  prob:{h:30.4,d:29.8,a:39.8}},
-  {h:'POR', a:'ESP', sH:0,sA:0, status:'scheduled', date:'Jul 6',  prob:{h:23.5,d:26.3,a:50.2}},
-  {h:'USA', a:'BEL', sH:0,sA:0, status:'scheduled', date:'Jul 6',  prob:{h:35.1,d:28.2,a:36.7}},
-  {h:'ARG', a:'EGY', sH:0,sA:0, status:'scheduled', date:'Jul 7',  prob:{h:71.5,d:18.7,a:9.8}},
-  {h:'SUI', a:'COL', sH:0,sA:0, status:'scheduled', date:'Jul 7',  prob:{h:27.9,d:29.5,a:42.6}},
+  {h:'CAN',a:'MAR', sH:0,sA:3, status:'final',     date:'Jul 4',  time:'10:00 AM PDT', prob:null},
+  {h:'PAR',a:'FRA', sH:0,sA:0, status:'scheduled', date:'Jul 4',  time:'2:00 PM PDT',  prob:{h:5.9,d:13.3,a:80.8}},
+  {h:'BRA',a:'NOR', sH:0,sA:0, status:'scheduled', date:'Jul 5',  time:'1:00 PM PDT',  prob:{h:52.6,d:25.3,a:22.1}},
+  {h:'MEX',a:'ENG', sH:0,sA:0, status:'scheduled', date:'Jul 5',  time:'5:00 PM PDT',  prob:{h:30.4,d:29.8,a:39.8}},
+  {h:'POR',a:'ESP', sH:0,sA:0, status:'scheduled', date:'Jul 6',  time:'12:00 PM PDT', prob:{h:23.5,d:26.3,a:50.2}},
+  {h:'USA',a:'BEL', sH:0,sA:0, status:'scheduled', date:'Jul 6',  time:'5:00 PM PDT',  prob:{h:35.1,d:28.2,a:36.7}},
+  {h:'ARG',a:'EGY', sH:0,sA:0, status:'scheduled', date:'Jul 7',  time:'9:00 AM PDT',  prob:{h:71.5,d:18.7,a:9.8}},
+  {h:'SUI',a:'COL', sH:0,sA:0, status:'scheduled', date:'Jul 7',  time:'1:00 PM PDT',  prob:{h:27.9,d:29.5,a:42.6}},
 ];
+
 
 // ─── ESPN API FETCH ───────────────────────────────────────────────────────────
 function setStatus(state, msg) {
@@ -471,6 +466,7 @@ function mcHtml(m, roundLabel) {
   const rH=RK[m.h]?`FIFA #${RK[m.h]}`:'', rA=RK[m.a]?`FIFA #${RK[m.a]}`:'';
   const stat=lv?`<span class="sb lv"><span class="ldot"></span>LIVE${m.minute?' '+m.minute:''}</span>`
     :ft?`<span class="sb ft">FINAL</span>`:`<span class="sb up">UPCOMING</span>`;
+  const timeStr=m.time?` · ${m.time}`:'';  
   const sc=(!ft&&!lv)?`<div class="vs">VS</div>`
     :`<div class="scd"><span class="${w==='h'?'rw':''}">${m.sH}</span><span style="color:#7a9e8a"> – </span><span class="${w==='a'?'rw':''}">${m.sA}</span></div>`;
   const prob=m.prob||PROBS[`${m.h}-${m.a}`]||null;
@@ -504,7 +500,7 @@ function bmHtml(m, isFin=false) {
     const iw=ws&&ws===side,il=ws&&ws!==side;
     return `<div class="bmt"><div class="bmtl"><span class="bmfl">${code?flag(code):''}</span><span class="bmnm${!code?' bntbd':''}">${code?name(code):'TBD'}</span></div><span class="bmsc${iw?' bw':il?' bl':''}">${(ft||lv)&&code&&!tbd?(side==='h'?m.sH:m.sA):''}</span></div>`;
   }
-  return `<div class="${cls}">${isFin?`<div class="trow">🏆</div><div class="crow">WORLD CHAMPION</div>`:''}<div class="bmm"><span class="bmd">${m.date||'TBD'}</span><span class="bst ${stcls}">${stlbl}</span></div>${tr(m.h,m.sH,'h')}${tr(m.a,m.sA,'a')}</div>`;
+  return `<div class="${cls}">${isFin?`<div class="trow">🏆</div><div class="crow">WORLD CHAMPION</div>`:''}<div class="bmm"><span class="bmd">${m.time||m.date||'TBD'}</span><span class="bst ${stcls}">${stlbl}</span></div>${tr(m.h,m.sH,'h')}${tr(m.a,m.sA,'a')}</div>`;
 }
 
 function col(label,inner,isFin=false){return `<div class="bcol${isFin?' fc':''}"><div class="rl">${label}</div><div class="bms">${inner}</div></div>`;}
