@@ -271,7 +271,7 @@ async function fetchESPN() {
   setStatus('', 'Fetching from ESPN...');
 
   // Fetch a date range covering the whole R32 (Jun 28 – Jul 2)
-  const url = 'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?limit=50&dates=20260628-20260702';
+  const url = 'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?limit=100&dates=20260628-20260719';
 
   try {
     const res = await fetch(url);
@@ -305,7 +305,6 @@ function parseESPN(data) {
 
       const hAbbr = ESPN_MAP[home.team.abbreviation] || home.team.abbreviation;
       const aAbbr = ESPN_MAP[away.team.abbreviation] || away.team.abbreviation;
-      const statusType = comp.status.type.name; // STATUS_SCHEDULED, STATUS_IN_PROGRESS, STATUS_FINAL
       const statusState = comp.status.type.state; // pre, in, post
 
       let status = 'scheduled';
@@ -319,12 +318,12 @@ function parseESPN(data) {
       const dateObj = new Date(ev.date);
       const dateStr = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Los_Angeles' });
 
-      // Determine round
-      const roundName = ev.competitions[0].notes?.[0]?.headline || 'Round of 32';
-      const roundKey = roundName.toLowerCase().includes('16') ? 'r16'
-        : roundName.toLowerCase().includes('quarter') ? 'qf'
-        : roundName.toLowerCase().includes('semi') ? 'sf'
-        : roundName.toLowerCase().includes('final') && !roundName.toLowerCase().includes('semi') ? 'final'
+      // Detect round by date
+      const evDay = dateObj.toISOString().slice(0,10);
+      const roundKey = evDay >= '2026-07-19' ? 'final'
+        : evDay >= '2026-07-14' ? 'sf'
+        : evDay >= '2026-07-09' ? 'qf'
+        : evDay >= '2026-07-04' ? 'r16'
         : 'r32';
 
       const prob = PROBS[`${hAbbr}-${aAbbr}`] || PROBS[`${aAbbr}-${hAbbr}`] || null;
@@ -333,29 +332,114 @@ function parseESPN(data) {
     } catch(e) { /* skip malformed */ }
   });
 
-  // Sort by date
+  // Sort chronologically by ESPN event ID
   parsed.sort((a,b) => a.espnId > b.espnId ? 1 : -1);
 
-  // Separate by round
-  MATCHES = parsed.filter(m => m.round === 'r32');
-  R16 = parsed.filter(m => m.round === 'r16');
-  QF = parsed.filter(m => m.round === 'qf');
-  SF = parsed.filter(m => m.round === 'sf');
-  FIN = parsed.filter(m => m.round === 'final');
+  // ── Separate into rounds from ESPN data ──
+  const espnR32  = parsed.filter(m => m.round === 'r32');
+  const espnR16  = parsed.filter(m => m.round === 'r16');
+  const espnQF   = parsed.filter(m => m.round === 'qf');
+  const espnSF   = parsed.filter(m => m.round === 'sf');
+  const espnFin  = parsed.filter(m => m.round === 'final');
 
-  // Pad bracket arrays to expected lengths
-  while (MATCHES.length < 16) MATCHES.push({h:null,a:null,sH:0,sA:0,status:'scheduled',date:'TBD',round:'r32'});
-  while (R16.length < 8) R16.push({h:null,a:null,sH:0,sA:0,status:'tbd',date:'Jul 4-7',round:'r16'});
-  while (QF.length < 4) QF.push({h:null,a:null,sH:0,sA:0,status:'tbd',date:'Jul 10-11',round:'qf'});
-  while (SF.length < 2) SF.push({h:null,a:null,sH:0,sA:0,status:'tbd',date:'Jul 14-15',round:'sf'});
-  while (FIN.length < 1) FIN.push({h:null,a:null,sH:0,sA:0,status:'tbd',date:'Jul 19',round:'final'});
-
-  // Merge bracket team names into R32 from static data if ESPN didn't return them
-  BRACKET_TEAMS.forEach((bt, i) => {
-    if (i < MATCHES.length && !MATCHES[i].h) {
-      MATCHES[i] = {...MATCHES[i], h: bt.h, a: bt.a, date: bt.date};
-    }
+  // ── Build R32: merge ESPN results onto static bracket slots ──
+  // BRACKET_TEAMS defines the fixed bracket order (slot 0–15).
+  // We match ESPN results by team abbreviation pair.
+  MATCHES = BRACKET_TEAMS.map(bt => {
+    // Find this matchup in ESPN data (either home/away order)
+    const found = espnR32.find(m =>
+      (m.h === bt.h && m.a === bt.a) ||
+      (m.h === bt.a && m.a === bt.h)
+    );
+    if (found) return found;
+    // Not returned by ESPN yet — show scheduled with static teams
+    return { h: bt.h, a: bt.a, sH: 0, sA: 0, status: 'scheduled', date: bt.date, round: 'r32', prob: PROBS[`${bt.h}-${bt.a}`]||null };
   });
+
+  // ── Derive R32 winner for each slot ──
+  function r32Winner(m) {
+    if (!m || m.status !== 'final') return null;
+    if (m.sH > m.sA) return m.h;
+    if (m.sA > m.sH) return m.a;
+    return null; // draw (went to pens — winner TBD from ESPN r16 data)
+  }
+
+  // ── Build R16: 8 slots, each fed by a pair of R32 slots ──
+  // Bracket pairing: slot i in R16 is fed by R32 slots [i*2] and [i*2+1]
+  // e.g. R16[0] = winner of MATCHES[0] vs winner of MATCHES[1]
+  // If ESPN already has the R16 fixture (both teams known), use it.
+  // Otherwise derive from R32 winners — showing one team as soon as they advance.
+  R16 = [];
+  const r16Dates = ['Jul 4','Jul 4','Jul 5','Jul 5','Jul 6','Jul 6','Jul 7','Jul 7'];
+  for (let i = 0; i < 8; i++) {
+    const m1 = MATCHES[i * 2];
+    const m2 = MATCHES[i * 2 + 1];
+    const w1 = r32Winner(m1);
+    const w2 = r32Winner(m2);
+
+    // Check if ESPN already has this as a real fixture
+    const espnSlot = espnR16[i] || null;
+
+    if (espnSlot && espnSlot.h && espnSlot.a) {
+      // ESPN has confirmed the matchup — use real data
+      R16.push(espnSlot);
+    } else {
+      // Derive from R32 winners
+      R16.push({
+        h: w1 || null,       // winner of first R32 match (or null if not done)
+        a: w2 || null,       // winner of second R32 match (or null if not done)
+        sH: 0, sA: 0,
+        status: (w1 && w2) ? 'scheduled' : 'tbd',
+        date: r16Dates[i],
+        round: 'r16',
+        prob: null,
+      });
+    }
+  }
+
+  // ── QF: derive from R16 winners same way ──
+  function matchWinner(m) {
+    if (!m || m.status !== 'final') return null;
+    if (m.sH > m.sA) return m.h;
+    if (m.sA > m.sH) return m.a;
+    return null;
+  }
+  const qfDates = ['Jul 9','Jul 9','Jul 10','Jul 11'];
+  QF = [];
+  for (let i = 0; i < 4; i++) {
+    const m1 = R16[i * 2];
+    const m2 = R16[i * 2 + 1];
+    const espnSlot = espnQF[i] || null;
+    if (espnSlot && espnSlot.h && espnSlot.a) {
+      QF.push(espnSlot);
+    } else {
+      const w1 = matchWinner(m1), w2 = matchWinner(m2);
+      QF.push({ h: w1||null, a: w2||null, sH:0, sA:0, status:(w1&&w2)?'scheduled':'tbd', date: qfDates[i], round:'qf', prob:null });
+    }
+  }
+
+  // ── SF ──
+  SF = [];
+  const sfDates = ['Jul 14','Jul 15'];
+  for (let i = 0; i < 2; i++) {
+    const m1 = QF[i * 2];
+    const m2 = QF[i * 2 + 1];
+    const espnSlot = espnSF[i] || null;
+    if (espnSlot && espnSlot.h && espnSlot.a) {
+      SF.push(espnSlot);
+    } else {
+      const w1 = matchWinner(m1), w2 = matchWinner(m2);
+      SF.push({ h: w1||null, a: w2||null, sH:0, sA:0, status:(w1&&w2)?'scheduled':'tbd', date: sfDates[i], round:'sf', prob:null });
+    }
+  }
+
+  // ── Final ──
+  if (espnFin.length && espnFin[0].h && espnFin[0].a) {
+    FIN = [espnFin[0]];
+  } else {
+    const w1 = matchWinner(SF[0]), w2 = matchWinner(SF[1]);
+    FIN = [{ h: w1||null, a: w2||null, sH:0, sA:0, status:(w1&&w2)?'scheduled':'tbd', date:'Jul 19', round:'final', prob:null }];
+  }
 }
 
 function buildFallback() {
