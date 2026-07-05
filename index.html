@@ -292,24 +292,42 @@ function setStatus(state, msg) {
 async function fetchESPN() {
   const btn = document.getElementById('rfbtn');
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin">⟳</span> FETCHING...'; }
-  setStatus('', 'Fetching from ESPN...');
+  setStatus('', 'Checking ESPN for live scores...');
 
-  // Fetch a date range covering the whole R32 (Jun 28 – Jul 2)
-  const url = 'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?limit=100&dates=20260628-20260719';
+  // Try multiple date windows — one for R32, one for R16+
+  const urls = [
+    'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?limit=50&dates=20260704-20260719',
+    'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?limit=50&dates=20260628-20260703',
+  ];
 
   try {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    parseESPN(data);
-    stamp();
-    setStatus('live', `Live from ESPN · ${MATCHES.length} matches loaded`);
+    // Use AbortController to timeout after 8 seconds
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+
+    let combined = [];
+    for (const url of urls) {
+      try {
+        const res = await fetch(url, { signal: controller.signal });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.events) combined = combined.concat(data.events);
+        }
+      } catch(e) { /* skip failed URL */ }
+    }
+    clearTimeout(timeout);
+
+    if (combined.length > 0) {
+      parseESPN({ events: combined });
+      stamp();
+      setStatus('live', `ESPN: ${combined.length} matches found · Updated`);
+    } else {
+      setStatus('err', 'ESPN unavailable · Showing hardcoded data');
+    }
     renderAll();
   } catch(e) {
     console.error('ESPN fetch failed:', e);
-    setStatus('err', 'ESPN fetch failed — showing cached data');
-    // Still render with whatever we have
-    if (MATCHES.length === 0) buildFallback();
+    setStatus('err', 'ESPN unavailable · Showing hardcoded data');
     renderAll();
   }
 
@@ -577,13 +595,17 @@ function renderAll(){renderBracket();renderFixtures();renderStandings();renderPl
 function showTab(n,el){document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.getElementById('panel-'+n).classList.add('active');if(el)el.classList.add('active');document.getElementById('scroller').scrollTop=0;}
 
 window.addEventListener('load',()=>{
+  // Step 1: Show hardcoded data immediately — no waiting
   buildFallback();
   renderAll();
-  fetchESPN();
-  // Auto-refresh every 3 minutes
-  setInterval(()=>{if(!document.hidden)fetchESPN();},3*60*1000);
-  // Expand date range as tournament progresses
-  // The fetch URL covers Jun 28–Jul 2; update weekly
+  stamp();
+  setStatus('', 'Loaded. Checking ESPN for live updates...');
+
+  // Step 2: Fetch ESPN in background — if it fails, hardcoded data is already showing
+  setTimeout(fetchESPN, 100);
+
+  // Auto-refresh every 3 minutes while page is visible
+  setInterval(()=>{ if(!document.hidden) fetchESPN(); }, 3*60*1000);
 });
 </script>
 </body>
