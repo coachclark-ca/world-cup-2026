@@ -271,13 +271,13 @@ let MATCHES = [
 // Ordered to match bracket: [0]=top-left pair, [7]=bottom-right pair
 const R16_FIXTURES = [
   {h:'CAN',a:'MAR', sH:0,sA:3, status:'final',     date:'Jul 4',  time:'10:00 AM PDT', prob:null},
-  {h:'PAR',a:'FRA', sH:0,sA:0, status:'scheduled', date:'Jul 4',  time:'2:00 PM PDT',  prob:{h:5.9,d:13.3,a:80.8}},
-  {h:'BRA',a:'NOR', sH:0,sA:0, status:'scheduled', date:'Jul 5',  time:'1:00 PM PDT',  prob:{h:52.6,d:25.3,a:22.1}},
-  {h:'MEX',a:'ENG', sH:0,sA:0, status:'scheduled', date:'Jul 5',  time:'5:00 PM PDT',  prob:{h:30.4,d:29.8,a:39.8}},
-  {h:'POR',a:'ESP', sH:0,sA:0, status:'scheduled', date:'Jul 6',  time:'12:00 PM PDT', prob:{h:23.5,d:26.3,a:50.2}},
-  {h:'USA',a:'BEL', sH:0,sA:0, status:'scheduled', date:'Jul 6',  time:'5:00 PM PDT',  prob:{h:35.1,d:28.2,a:36.7}},
-  {h:'ARG',a:'EGY', sH:0,sA:0, status:'scheduled', date:'Jul 7',  time:'9:00 AM PDT',  prob:{h:71.5,d:18.7,a:9.8}},
-  {h:'SUI',a:'COL', sH:0,sA:0, status:'scheduled', date:'Jul 7',  time:'1:00 PM PDT',  prob:{h:27.9,d:29.5,a:42.6}},
+  {h:'PAR',a:'FRA', sH:0,sA:1, status:'final',     date:'Jul 4',  time:'2:00 PM PDT',  prob:null},
+  {h:'BRA',a:'NOR', sH:0,sA:0, status:'scheduled', date:'Jul 5',  time:'1:00 PM PDT',  prob:{h:54.3,d:25,a:20.7}},
+  {h:'MEX',a:'ENG', sH:0,sA:0, status:'scheduled', date:'Jul 5',  time:'5:00 PM PDT',  prob:{h:31,d:30.2,a:38.8}},
+  {h:'POR',a:'ESP', sH:0,sA:0, status:'scheduled', date:'Jul 6',  time:'12:00 PM PDT', prob:{h:24.3,d:25.9,a:49.8}},
+  {h:'USA',a:'BEL', sH:0,sA:0, status:'scheduled', date:'Jul 6',  time:'5:00 PM PDT',  prob:{h:37,d:27.5,a:35.5}},
+  {h:'ARG',a:'EGY', sH:0,sA:0, status:'scheduled', date:'Jul 7',  time:'9:00 AM PDT',  prob:{h:69.5,d:20,a:10.5}},
+  {h:'SUI',a:'COL', sH:0,sA:0, status:'scheduled', date:'Jul 7',  time:'1:00 PM PDT',  prob:{h:27.1,d:30.4,a:42.5}},
 ];
 
 
@@ -292,6 +292,7 @@ function setStatus(state, msg) {
 async function fetchESPN() {
   const btn = document.getElementById('rfbtn');
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin">⟳</span> FETCHING...'; }
+  stamp();   // always update timestamp immediately when fetch is triggered
   setStatus('', 'Checking ESPN for live scores...');
 
   // Try multiple date windows — one for R32, one for R16+
@@ -392,21 +393,21 @@ function parseESPN(data) {
   }
 
   // Always re-derive QF/SF/Final from results, overwriting any TBD placeholders
-  // (espnQF/SF/Fin not used here — we derive from R16 winners directly)
   const espnQF = [], espnSF = [], espnFin = [];
-  const qfDates = ['Jul 9','Jul 9','Jul 10','Jul 11'];
+  const qfSlots2 = [
+    {date:'Jul 9',  time:'1:00 PM PDT'},
+    {date:'Jul 10', time:'12:00 PM PDT'},
+    {date:'Jul 11', time:'2:00 PM PDT'},
+    {date:'Jul 11', time:'6:00 PM PDT'},
+  ];
+  const r16pairs = [[1,0],[2,3],[5,4],[6,7]];
   QF = [];
   for (let i = 0; i < 4; i++) {
-    const w1 = winner(R16[i*2]);
-    const w2 = winner(R16[i*2+1]);
-    // Check if ESPN has a real live/final score for this QF slot
-    const existing = espnQF[i] || null;
-    if (existing && existing.h && existing.a) {
-      QF.push(existing);
-    } else {
-      QF.push({ h:w1||null, a:w2||null, sH:0, sA:0,
-        status: (w1&&w2)?'scheduled':'tbd', date:qfDates[i], round:'qf' });
-    }
+    const w1 = winner(R16[r16pairs[i][0]]);
+    const w2 = winner(R16[r16pairs[i][1]]);
+    QF.push({ h:w1||null, a:w2||null, sH:0, sA:0,
+      status:(w1&&w2)?'scheduled':'tbd',
+      date:qfSlots2[i].date, time:qfSlots2[i].time, round:'qf' });
   }
 
   // Always re-derive SF
@@ -446,12 +447,25 @@ function buildFallback() {
     return null;
   }
 
-  const qfDates = ['Jul 9','Jul 9','Jul 10','Jul 11'];
+  // QF confirmed fixture: FRA vs MAR (Jul 9 — winner R16[1] vs winner R16[0])
+  // QF order from SportRadar: M97=FRA/MAR, M98=TBD(Jul10), M99=TBD(Jul11), M100=TBD(Jul11)
+  const qfSlots = [
+    {date:'Jul 9',  time:'1:00 PM PDT'},
+    {date:'Jul 10', time:'12:00 PM PDT'},
+    {date:'Jul 11', time:'2:00 PM PDT'},
+    {date:'Jul 11', time:'6:00 PM PDT'},
+  ];
   QF = [];
   for (let i = 0; i < 4; i++) {
-    const w1 = winner(R16[i*2]), w2 = winner(R16[i*2+1]);
+    // QF[0]: winner R16[1](FRA) vs winner R16[0](MAR) — confirmed FRA vs MAR Jul 9
+    // QF[1]: winner R16[2] vs winner R16[3]
+    // QF[2]: winner R16[5] vs winner R16[4]  (right half)
+    // QF[3]: winner R16[6] vs winner R16[7]
+    const r16pairs = [[1,0],[2,3],[5,4],[6,7]];
+    const w1 = winner(R16[r16pairs[i][0]]), w2 = winner(R16[r16pairs[i][1]]);
     QF.push({ h:w1||null, a:w2||null, sH:0, sA:0,
-      status:(w1&&w2)?'scheduled':'tbd', date:qfDates[i] });
+      status:(w1&&w2)?'scheduled':'tbd',
+      date:qfSlots[i].date, time:qfSlots[i].time });
   }
 
   const sfDates = ['Jul 14','Jul 15'];
@@ -598,11 +612,11 @@ window.addEventListener('load',()=>{
   // Step 1: Show hardcoded data immediately — no waiting
   buildFallback();
   renderAll();
-  stamp();
-  setStatus('', 'Loaded. Checking ESPN for live updates...');
+  stamp();                                    // timestamp shows right away
+  setStatus('live', 'Data ready · Checking ESPN for live updates...');
 
-  // Step 2: Fetch ESPN in background — if it fails, hardcoded data is already showing
-  setTimeout(fetchESPN, 100);
+  // Step 2: Fetch ESPN in background — fire and forget
+  fetchESPN().catch(() => setStatus('err', 'ESPN unavailable · Hardcoded data shown'));
 
   // Auto-refresh every 3 minutes while page is visible
   setInterval(()=>{ if(!document.hidden) fetchESPN(); }, 3*60*1000);
