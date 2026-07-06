@@ -289,6 +289,21 @@ function setStatus(state, msg) {
   txt.textContent = msg;
 }
 
+
+
+// Win probabilities for upcoming matches (from SportRadar)
+const PROBS = {
+  // R16
+  'BRA-NOR':{h:54.3,d:25,a:20.7},  'NOR-BRA':{h:20.7,d:25,a:54.3},
+  'MEX-ENG':{h:31,d:30.2,a:38.8},  'ENG-MEX':{h:38.8,d:30.2,a:31},
+  'POR-ESP':{h:24.3,d:25.9,a:49.8},'ESP-POR':{h:49.8,d:25.9,a:24.3},
+  'USA-BEL':{h:37,d:27.5,a:35.5},  'BEL-USA':{h:35.5,d:27.5,a:37},
+  'ARG-EGY':{h:69.5,d:20,a:10.5},  'EGY-ARG':{h:10.5,d:20,a:69.5},
+  'SUI-COL':{h:27.1,d:30.4,a:42.5},'COL-SUI':{h:42.5,d:30.4,a:27.1},
+  // QF
+  'FRA-MAR':{h:60.6,d:23.4,a:16},  'MAR-FRA':{h:16,d:23.4,a:60.6},
+};
+
 async function fetchESPN() {
   const btn = document.getElementById('rfbtn');
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin">⟳</span> FETCHING...'; }
