@@ -292,148 +292,153 @@ function setStatus(state, msg) {
 async function fetchESPN() {
   const btn = document.getElementById('rfbtn');
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin">⟳</span> FETCHING...'; }
-  stamp();   // always update timestamp immediately when fetch is triggered
-  setStatus('', 'Checking ESPN for live scores...');
+  stamp();
 
-  // Try multiple date windows — one for R32, one for R16+
-  const urls = [
-    'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?limit=50&dates=20260704-20260719',
-    'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?limit=50&dates=20260628-20260703',
-  ];
+  // Single call — full tournament date range, high limit
+  const URL = 'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?limit=200&dates=20260611-20260719';
 
   try {
-    // Use AbortController to timeout after 8 seconds
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
-
-    let combined = [];
-    for (const url of urls) {
-      try {
-        const res = await fetch(url, { signal: controller.signal });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.events) combined = combined.concat(data.events);
-        }
-      } catch(e) { /* skip failed URL */ }
-    }
-    clearTimeout(timeout);
-
-    if (combined.length > 0) {
-      parseESPN({ events: combined });
-      stamp();
-      setStatus('live', `ESPN: ${combined.length} matches found · Updated`);
+    const res = await fetch(URL);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const count = data.events ? data.events.length : 0;
+    if (count > 0) {
+      parseESPN(data);
+      renderAll();
+      setStatus('live', 'ESPN live · ' + count + ' matches · ' + new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',timeZoneName:'short'}));
     } else {
-      setStatus('err', 'ESPN unavailable · Showing hardcoded data');
+      setStatus('err', 'ESPN returned no events · showing hardcoded data');
     }
-    renderAll();
   } catch(e) {
-    console.error('ESPN fetch failed:', e);
-    setStatus('err', 'ESPN unavailable · Showing hardcoded data');
-    renderAll();
+    console.error('ESPN fetch error:', e.message);
+    setStatus('err', 'ESPN unavailable · showing hardcoded data');
   }
 
   if (btn) { btn.disabled = false; btn.innerHTML = '⟳ REFRESH NOW'; }
 }
 
+
 function parseESPN(data) {
-  // Build R16 from confirmed fixtures, merging any live/final scores from ESPN
-  // Start with the known R16 fixtures
-  R16 = R16_FIXTURES.map(f => ({...f}));
+  if (!data || !data.events || data.events.length === 0) return;
 
-  // If ESPN data available, update any live or just-finished R16/QF/SF/Final scores
-  if (data && data.events) {
-    data.events.forEach(ev => {
-      try {
-        const comp = ev.competitions[0];
-        const home = comp.competitors.find(c => c.homeAway === 'home');
-        const away = comp.competitors.find(c => c.homeAway === 'away');
-        if (!home || !away) return;
-        const hAbbr = ESPN_MAP[home.team.abbreviation] || home.team.abbreviation;
-        const aAbbr = ESPN_MAP[away.team.abbreviation] || away.team.abbreviation;
-        const statusState = comp.status.type.state;
-        let status = 'scheduled';
-        if (statusState === 'in') status = 'in_progress';
-        if (statusState === 'post') status = 'final';
-        const sH = parseInt(home.score) || 0;
-        const sA = parseInt(away.score) || 0;
-        const minute = statusState === 'in' ? (comp.status.displayClock || '') : null;
-        const dateObj = new Date(ev.date);
-        const evDay = dateObj.toISOString().slice(0,10);
-        const roundKey = evDay >= '2026-07-19' ? 'final'
-          : evDay >= '2026-07-14' ? 'sf'
-          : evDay >= '2026-07-09' ? 'qf'
-          : evDay >= '2026-07-04' ? 'r16'
-          : 'r32';
+  // Process every event ESPN returns
+  data.events.forEach(ev => {
+    try {
+      const comp = ev.competitions[0];
+      const home = comp.competitors.find(c => c.homeAway === 'home');
+      const away = comp.competitors.find(c => c.homeAway === 'away');
+      if (!home || !away) return;
 
-        if (roundKey === 'r16') {
-          const idx = R16.findIndex(m => (m.h===hAbbr&&m.a===aAbbr)||(m.h===aAbbr&&m.a===hAbbr));
-          if (idx !== -1) { R16[idx] = {...R16[idx], sH, sA, status, minute}; }
-        } else if (roundKey === 'qf') {
-          const idx = QF.findIndex(m => (m.h===hAbbr&&m.a===aAbbr)||(m.h===aAbbr&&m.a===hAbbr));
-          if (idx !== -1) { QF[idx] = {...QF[idx], sH, sA, status, minute}; }
-        } else if (roundKey === 'sf') {
-          const idx = SF.findIndex(m => (m.h===hAbbr&&m.a===aAbbr)||(m.h===aAbbr&&m.a===hAbbr));
-          if (idx !== -1) { SF[idx] = {...SF[idx], sH, sA, status, minute}; }
-        } else if (roundKey === 'final') {
-          if (FIN[0] && ((FIN[0].h===hAbbr&&FIN[0].a===aAbbr)||(FIN[0].h===aAbbr&&FIN[0].a===hAbbr))) {
-            FIN[0] = {...FIN[0], sH, sA, status, minute};
+      const hCode = ESPN_MAP[home.team.abbreviation] || home.team.abbreviation;
+      const aCode = ESPN_MAP[away.team.abbreviation] || away.team.abbreviation;
+      const state  = comp.status.type.state;   // 'pre' | 'in' | 'post'
+      const status = state === 'in' ? 'in_progress' : state === 'post' ? 'final' : 'scheduled';
+      const sH = parseInt(home.score) || 0;
+      const sA = parseInt(away.score) || 0;
+      const clock = state === 'in' ? (comp.status.displayClock || '') : null;
+      const dateObj = new Date(ev.date);
+      const day = dateObj.toISOString().slice(0, 10);
+      const dateStr = dateObj.toLocaleDateString('en-US', {month:'short', day:'numeric', timeZone:'America/Los_Angeles'});
+      const timeStr = dateObj.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit', timeZoneName:'short', timeZone:'America/Los_Angeles'});
+
+      // Determine round by date
+      const round = day >= '2026-07-19' ? 'final'
+        : day >= '2026-07-14' ? 'sf'
+        : day >= '2026-07-09' ? 'qf'
+        : day >= '2026-07-04' ? 'r16'
+        : 'r32';
+
+      // Try to match against known teams and update in place
+      if (round === 'r32') {
+        const idx = MATCHES.findIndex(m =>
+          (m.h === hCode && m.a === aCode) || (m.h === aCode && m.a === hCode)
+        );
+        if (idx !== -1) {
+          MATCHES[idx] = {...MATCHES[idx], sH, sA, status, minute: clock, date: dateStr, time: timeStr};
+        }
+      } else if (round === 'r16') {
+        const idx = R16.findIndex(m =>
+          (m.h === hCode && m.a === aCode) || (m.h === aCode && m.a === hCode)
+        );
+        if (idx !== -1) {
+          R16[idx] = {...R16[idx], sH, sA, status, minute: clock, date: dateStr, time: timeStr};
+        }
+      } else if (round === 'qf') {
+        const idx = QF.findIndex(m =>
+          (m.h === hCode && m.a === aCode) || (m.h === aCode && m.a === hCode)
+        );
+        if (idx !== -1) {
+          QF[idx] = {...QF[idx], sH, sA, status, minute: clock, date: dateStr, time: timeStr};
+        } else {
+          // QF not yet seeded — add it if both teams real
+          if (hCode && aCode && !hCode.startsWith('W') && !aCode.startsWith('W')) {
+            QF.push({h: hCode, a: aCode, sH, sA, status, minute: clock, date: dateStr, time: timeStr, round: 'qf'});
           }
         }
-      } catch(e) {}
-    });
-  }
+      } else if (round === 'sf') {
+        const idx = SF.findIndex(m =>
+          (m.h === hCode && m.a === aCode) || (m.h === aCode && m.a === hCode)
+        );
+        if (idx !== -1) {
+          SF[idx] = {...SF[idx], sH, sA, status, minute: clock, date: dateStr, time: timeStr};
+        } else if (!hCode.startsWith('W') && !aCode.startsWith('W')) {
+          SF.push({h: hCode, a: aCode, sH, sA, status, minute: clock, date: dateStr, time: timeStr, round: 'sf'});
+        }
+      } else if (round === 'final') {
+        if (!hCode.startsWith('W') && !aCode.startsWith('W')) {
+          FIN[0] = {h: hCode, a: aCode, sH, sA, status, minute: clock, date: dateStr, time: timeStr, round: 'final'};
+        }
+      }
+    } catch(e) { /* skip bad events */ }
+  });
 
-  // Derive winner from each match (handles pens via penWin)
+  // After updating all known results, re-derive bracket seeding bottom-up
   function winner(m) {
     if (!m || m.status !== 'final') return null;
     if (m.penWin) return m.penWin;
-    if (m.sH > m.sA) return m.h;
-    if (m.sA > m.sH) return m.a;
-    return null;
+    return m.sH > m.sA ? m.h : m.sA > m.sH ? m.a : null;
   }
 
-  // Always re-derive QF/SF/Final from results, overwriting any TBD placeholders
-  const espnQF = [], espnSF = [], espnFin = [];
-  const qfSlots2 = [
-    {date:'Jul 9',  time:'1:00 PM PDT'},
-    {date:'Jul 10', time:'12:00 PM PDT'},
-    {date:'Jul 11', time:'2:00 PM PDT'},
-    {date:'Jul 11', time:'6:00 PM PDT'},
-  ];
+  // Seed R16 slots from R32 winners where R16 slot is still TBD
+  const r32pairs = [[0,1],[2,3],[4,5],[6,7],[8,9],[10,11],[12,13],[14,15]];
+  r32pairs.forEach((pair, i) => {
+    const w1 = winner(MATCHES[pair[0]]);
+    const w2 = winner(MATCHES[pair[1]]);
+    if (w1 && !R16[i].h) R16[i].h = w1;
+    if (w2 && !R16[i].a) R16[i].a = w2;
+    if (R16[i].h && R16[i].a && R16[i].status === 'tbd') R16[i].status = 'scheduled';
+  });
+
+  // Seed QF slots from R16 winners
+  // Official QF pairing: QF[0]=R16[1]vsR16[0], QF[1]=R16[2]vsR16[3], QF[2]=R16[5]vsR16[4], QF[3]=R16[6]vsR16[7]
   const r16pairs = [[1,0],[2,3],[5,4],[6,7]];
-  QF = [];
-  for (let i = 0; i < 4; i++) {
-    const w1 = winner(R16[r16pairs[i][0]]);
-    const w2 = winner(R16[r16pairs[i][1]]);
-    QF.push({ h:w1||null, a:w2||null, sH:0, sA:0,
-      status:(w1&&w2)?'scheduled':'tbd',
-      date:qfSlots2[i].date, time:qfSlots2[i].time, round:'qf' });
-  }
+  const qfSlots = [{date:'Jul 9',time:'1:00 PM PDT'},{date:'Jul 10',time:'12:00 PM PDT'},{date:'Jul 11',time:'2:00 PM PDT'},{date:'Jul 11',time:'6:00 PM PDT'}];
+  while (QF.length < 4) QF.push({h:null,a:null,sH:0,sA:0,status:'tbd',date:'TBD'});
+  r16pairs.forEach((pair, i) => {
+    const w1 = winner(R16[pair[0]]);
+    const w2 = winner(R16[pair[1]]);
+    if (w1 && !QF[i].h) { QF[i].h = w1; QF[i].date = qfSlots[i].date; QF[i].time = qfSlots[i].time; }
+    if (w2 && !QF[i].a) { QF[i].a = w2; }
+    if (QF[i].h && QF[i].a && QF[i].status === 'tbd') QF[i].status = 'scheduled';
+  });
 
-  // Always re-derive SF
-  const sfDates = ['Jul 14','Jul 15'];
-  SF = [];
-  for (let i = 0; i < 2; i++) {
-    const w1 = winner(QF[i*2]);
-    const w2 = winner(QF[i*2+1]);
-    const existing = espnSF[i] || null;
-    if (existing && existing.h && existing.a) {
-      SF.push(existing);
-    } else {
-      SF.push({ h:w1||null, a:w2||null, sH:0, sA:0,
-        status: (w1&&w2)?'scheduled':'tbd', date:sfDates[i], round:'sf' });
-    }
-  }
+  // Seed SF from QF winners
+  const sfSlots = [{date:'Jul 14',time:'TBD'},{date:'Jul 15',time:'TBD'}];
+  while (SF.length < 2) SF.push({h:null,a:null,sH:0,sA:0,status:'tbd',date:'TBD'});
+  [[0,1],[2,3]].forEach((pair, i) => {
+    const w1 = winner(QF[pair[0]]);
+    const w2 = winner(QF[pair[1]]);
+    if (w1 && !SF[i].h) { SF[i].h = w1; SF[i].date = sfSlots[i].date; SF[i].time = sfSlots[i].time; }
+    if (w2 && !SF[i].a) SF[i].a = w2;
+    if (SF[i].h && SF[i].a && SF[i].status === 'tbd') SF[i].status = 'scheduled';
+  });
 
-  // Always re-derive Final
-  const fw1 = winner(SF[0]), fw2 = winner(SF[1]);
-  if (espnFin.length && espnFin[0].h && espnFin[0].a) {
-    FIN = [espnFin[0]];
-  } else {
-    FIN = [{ h:fw1||null, a:fw2||null, sH:0, sA:0,
-      status:(fw1&&fw2)?'scheduled':'tbd', date:'Jul 19', round:'final' }];
-  }
+  // Seed Final from SF winners
+  if (!FIN[0].h) FIN[0].h = winner(SF[0]);
+  if (!FIN[0].a) FIN[0].a = winner(SF[1]);
+  if (FIN[0].h && FIN[0].a && FIN[0].status === 'tbd') FIN[0].status = 'scheduled';
 }
+
 
 function buildFallback() {
   // Use hardcoded R32 results and R16 fixtures, then derive further rounds
